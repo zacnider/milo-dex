@@ -47,7 +47,7 @@ A privacy-first AMM DEX built on [Miden](https://miden.io/) — a zk-rollup wher
 
 - [Rust](https://rustup.rs/) (1.75+)
 - [Node.js](https://nodejs.org/) (20+)
-- [Miden Wallet](https://chromewebstore.google.com/) browser extension
+- [Miden Wallet](https://chromewebstore.google.com/detail/miden-wallet/ablmompanofnodfdkgchkpmphailefpb) browser extension
 
 ### Development Setup
 
@@ -72,7 +72,7 @@ cd frontend && npm install && npm run dev
 | Swap Daemon | 8080 | Handles token swap transactions |
 | Liquidity Daemon | 8090 | Manages liquidity deposits & withdrawals |
 | Faucet Daemon | 8084 | Mints testnet tokens to users |
-| Frontend | 3000 | React SPA (dev mode) |
+| Frontend | 3000 | React SPA  |
 
 ## Token & Pool Configuration
 
