@@ -1,6 +1,6 @@
 # Milo Swap
 
-A privacy AMM DEX built on [Miden](https://miden.io/) — a zk-rollup where transaction proofs are generated client-side.
+A privacy AMM DEX built on [Miden](https://miden.xyz/) — a zk-rollup where transaction proofs are generated client-side.
 
 **Live:** [https://milodex.xyz](https://milodex.xyz)
 
