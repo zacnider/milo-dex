@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "integration",
+    "faucet-server",
+    "pool-daemon"
+]
+resolver = "2"
+
+[workspace.dependencies]
+miden = { version = "0.7" }

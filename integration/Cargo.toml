@@ -1,0 +1,44 @@
+[package]
+name = "integration"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "setup_milo"
+path = "src/bin/setup_milo.rs"
+
+[[bin]]
+name = "add_liquidity"
+path = "src/bin/add_liquidity.rs"
+
+[[bin]]
+name = "check_pool_reserves"
+path = "src/bin/check_pool_reserves.rs"
+
+[dependencies]
+miden = { workspace = true }
+miden-client = { version = "0.12", features = ["tonic", "testing"] }
+miden-client-sqlite-store = { version = "0.12", package = "miden-client-sqlite-store" }
+miden-objects = { version = "0.12", default-features = false, features = ["testing"] }
+miden-core = { version = "0.19" }
+miden-testing = "0.12"
+miden-mast-package = { version = "0.19", default-features = false }
+miden-standards = { version = "0.13" }
+miden-protocol = { version = "0.13" }
+miden-lib = { version = "0.12", default-features = false }
+tokio = { version = "1.40", features = ["rt-multi-thread", "net", "macros", "fs"] }
+rand = { version = "0.9" }
+rand_chacha = "0.9"
+anyhow = "1.0"
+base64 = "0.22"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+aes-gcm = "0.10"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+bip39 = "2.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }

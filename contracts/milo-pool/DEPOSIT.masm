@@ -1,0 +1,7 @@
+# Simple P2ID Deposit Script for Milo Swap
+# Accepts assets and returns them to a specific account
+
+begin
+    # Just accept the deposit - P2ID handles the recipient validation
+    push.1
+end

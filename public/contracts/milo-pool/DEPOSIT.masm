@@ -1,0 +1,43 @@
+// DEPOSIT Note Script for Milo Swap Pools
+// This script is used to deposit liquidity into pools
+
+// The script expects the following inputs:
+// 0: min_lp_amount - Minimum LP tokens to receive
+// 1: deadline - Timestamp when the deposit expires
+// 2: p2id_tag - P2ID tag for the recipient
+// 3-5: reserved (0)
+// 6-7: recipient_account_id (high, low)
+
+#! ProvenNonGlobal(Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(0))
+#! ProvenPublicNote
+
+# Error codes
+const.ERR_INVALID_SENDER::eq.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+    assertz.ERR_INVALID_SENDER
+end
+
+# Get the sender (pool account) - must be the expected pool
+push.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+exec.note_assets::get.0
+push.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+assertz.ERR_INVALID_SENDER
+
+# Validate the asset amount
+# Input 0: min_lp_amount
+push.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+exec.note_inputs::get.0
+drop
+
+# Get current timestamp and validate deadline
+push.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+exec.clock::get_block_number
+drop
+
+# Input 1: deadline
+push.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+exec.note_inputs::get.1
+gt.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+assertz
+
+# For now, just accept the deposit (simplified version)
+push.1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0

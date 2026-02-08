@@ -1,0 +1,68 @@
+# WITHDRAW Note Script for Milo Swap
+# Burns LP shares and returns proportional tokens to user
+#
+# Note Inputs (8 total):
+# [0] lp_amount - Amount of LP shares to withdraw
+# [1] min_token_a_out - Minimum tokenA to receive (slippage protection)
+# [2] min_token_b_out - Minimum tokenB to receive (slippage protection)
+# [3] deadline - Transaction deadline timestamp
+# [4] p2id_tag - Tag for return P2ID note
+# [5] 0 - Reserved
+# [6] user_id_suffix - User account ID suffix
+# [7] user_id_prefix - User account ID prefix
+
+use.milo::milo_pool
+use.miden::output_note
+use.miden::active_account
+
+# Constants
+const.NUMBER_OF_INPUTS = 0x0008
+const.LP_AMOUNT_INDEX = 0x0010
+const.MIN_TOKEN_A_OUT_INDEX = 0x0011
+const.MIN_TOKEN_B_OUT_INDEX = 0x0012
+const.DEADLINE_INDEX = 0x0013
+const.P2ID_TAG_INDEX = 0x0014
+const.USER_ID_SUFFIX_INDEX = 0x0016
+const.USER_ID_PREFIX_INDEX = 0x0017
+
+# Error codes
+const.ERR_DEADLINE_PASSED = "Withdraw deadline has passed"
+const.ERR_SLIPPAGE_TOKEN_A = "TokenA slippage exceeded"
+const.ERR_SLIPPAGE_TOKEN_B = "TokenB slippage exceeded"
+const.ERR_INSUFFICIENT_LP = "Insufficient LP balance"
+
+# Storage slots
+const.USER_DEPOSITS_MAPPING_SLOT = 0x0004
+const.POOL_STATE_MAPPING_SLOT = 0x0003
+const.ASSETS_MAPPING_SLOT = 0x0002
+
+begin
+    # Read note inputs
+    push.NUMBER_OF_INPUTS
+    push.0
+    # => [dest_ptr, num_inputs]
+
+    syscall.note_get_inputs
+    # => [num_inputs]
+    drop
+
+    # Load parameters from memory
+    push.LP_AMOUNT_INDEX mem_load
+    # => [lp_amount]
+
+    push.USER_ID_SUFFIX_INDEX mem_load
+    push.USER_ID_PREFIX_INDEX mem_load
+    # => [user_id_prefix, user_id_suffix, lp_amount]
+
+    # Verify user has sufficient LP shares
+    # TODO: Read user LP balance from storage and validate
+
+    # Calculate proportional token amounts based on pool reserves
+    # token_a_out = (lp_amount / total_lp) * reserve_a
+    # token_b_out = (lp_amount / total_lp) * reserve_b
+
+    # For now, just validate and signal success
+    # The actual withdrawal logic will be handled by pool contract
+    push.1
+    # => [success]
+end

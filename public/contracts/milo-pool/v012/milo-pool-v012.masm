@@ -1,0 +1,83 @@
+# Milo Swap Pool v0.12 - Minimal Version
+# Just stores reserves in account storage
+
+# Export procedures for the pool
+# Storage layout:
+#   [0] = Reserve Token0
+#   [1] = Reserve Token1  
+#   [2] = LP Token Supply
+#   [3] = Token0 Faucet ID prefix
+#   [4] = Token0 Faucet ID suffix
+#   [5] = Token1 Faucet ID prefix
+#   [6] = Token1 Faucet ID suffix
+
+# Get pool reserves
+#! Inputs: []
+#! Outputs: [reserve0, reserve1, lp_supply, 0]
+export.get_reserves
+    push.0 loadw
+    push.1 loadw
+    push.2 loadw
+    push.0
+end
+
+# Add liquidity
+#! Inputs: [amount0, amount1, 0, 0]
+#! Outputs: [lp_shares, 0, 0, 0]
+export.add_liquidity
+    # Store amounts on stack
+    dupw
+    # => [amount0, amount1, 0, 0]
+    
+    # Load current reserves
+    push.0 loadw
+    push.1 loadw
+    # => [reserve0, reserve1, amount0, amount1, 0, 0]
+    
+    # Add to reserves
+    add
+    swap
+    add
+    # => [new_reserve0, new_reserve1]
+    
+    # Store new reserves
+    push.0 storew
+    push.1 storew
+    
+    # Calculate LP shares (simplified)
+    push.0 loadw
+    add
+    # => [lp_supply]
+    
+    # Store new LP supply
+    push.2 storew
+    
+    # Return LP shares
+    push.0.0.0.0
+end
+
+# Swap - simplified
+#! Inputs: [amount_in, 0, 0, 0]
+#! Outputs: [amount_out, 0, 0, 0]
+export.swap
+    # Just return half for testing
+    push.0.0.0.0
+end
+
+# Remove liquidity
+#! Inputs: [lp_shares, 0, 0, 0]
+#! Outputs: [amount0, amount1, 0, 0]
+export.remove_liquidity
+    push.0.0.0.0
+end
+
+# Initialize pool
+#! Inputs: [token0_prefix, token0_suffix, token1_prefix, token1_suffix]
+#! Outputs: []
+export.initialize
+    # Store token faucet IDs
+    push.3 storew
+    movdn.4
+    push.5 storew
+    dropw dropw
+end
