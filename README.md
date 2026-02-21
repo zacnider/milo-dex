@@ -1,6 +1,6 @@
 # Milo DEX
 
-A fully-featured decentralized exchange built on the [Miden](https://miden.io/) blockchain, implementing a constant-product AMM with privacy swaps, limit orders, multi-hop routing, a TWAP price oracle, and dynamic fees.
+A fully-featured decentralized exchange built on the [Miden](https://miden.xyz/) blockchain, implementing a constant-product AMM with privacy swaps, limit orders, multi-hop routing, a TWAP price oracle, and dynamic fees.
 
 **Live:** [milodex.xyz](https://milodex.xyz)
 
