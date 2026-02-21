@@ -122,7 +122,7 @@ milo-swap/
 
 - [Rust](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) 18+
-- [Miden browser extension wallet](https://docs.miden.io/)
+- [Miden browser extension wallet](https://chromewebstore.google.com/detail/miden-wallet/ablmompanofnodfdkgchkpmphailefpb)
 
 ### Local Development
 
