@@ -1,140 +1,242 @@
-# Milo Swap
+# Milo DEX
 
-A privacy AMM DEX built on [Miden](https://miden.xyz/) — a zk-rollup where transaction proofs are generated client-side.
+A fully-featured decentralized exchange built on the [Miden](https://miden.io/) blockchain, implementing a constant-product AMM with privacy swaps, limit orders, multi-hop routing, a TWAP price oracle, and dynamic fees.
 
-**Live:** [https://milodex.xyz](https://milodex.xyz)
-
-## Features
-
-- **Token Swaps** — Swap between MILO, MELO & MUSDC with on-chain AMM pricing
-- **Liquidity Pools** — Provide liquidity and track your positions
-- **Token Faucet** — Claim testnet tokens (10 per token per day)
-- **Portfolio** — View balances, deposits & pool positions
-- **Privacy by Default** — All proofs generated locally in your browser via WASM
+**Live:** [milodex.xyz](https://milodex.xyz)
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Frontend                       │
-│         React + Miden WASM Client                │
-│        (client-side zk-proof generation)         │
-└──────────┬──────────┬──────────┬────────────────┘
-           │          │          │
-     /api/swap   /api/liquidity  /api/faucet
-           │          │          │
-    ┌──────┴──┐ ┌─────┴───┐ ┌───┴──────┐
-    │  Swap   │ │Liquidity│ │  Faucet  │
-    │ Daemon  │ │ Daemon  │ │  Daemon  │
-    │ :8080   │ │  :8090  │ │  :8084   │
-    └────┬────┘ └────┬────┘ └────┬─────┘
-         │           │           │
-         └───────────┴───────────┘
-                     │
-           Miden Testnet RPC
+                     ┌──────────────────┐
+                     │  React Frontend  │
+                     │   (Vite + WASM)  │
+                     └───────┬──────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+     ┌────────▼──────┐ ┌────▼───────┐ ┌────▼───────┐
+     │ Swap Daemon   │ │ Liquidity  │ │  Faucet    │
+     │ :8080         │ │ Daemon     │ │  Server    │
+     │               │ │ :8090      │ │  :8084     │
+     └────────┬──────┘ └────┬───────┘ └────┬───────┘
+              │             │              │
+              └─────────────┼──────────────┘
+                            │
+                   ┌────────▼─────────┐
+                   │  Miden Testnet   │
+                   │  (ZK Rollup)     │
+                   └──────────────────┘
 ```
 
-### Tech Stack
+The frontend communicates with three Rust backend daemons over REST. All on-chain operations go through the Miden SDK, which produces zero-knowledge proofs client-side (WASM) or daemon-side (native Rust).
 
-- **Frontend:** React, TypeScript, Vite, Miden WASM Client
-- **Backend:** Rust, axum, Miden Client SDK
-- **Protocol:** P2ID (Pay-to-ID) note pattern for all token transfers
-- **Infra:** Nginx reverse proxy, Let's Encrypt SSL, systemd
+## Features
 
-## Getting Started
+### Trading
+- **Market swaps** with constant-product AMM (`x * y = k`)
+- **Limit orders** with target price and configurable expiry (1h / 24h / 7d)
+- **Multi-hop routing** for pairs without a direct pool (e.g. MILO -> MUSDC -> MELO)
+- **Privacy mode** using Miden's private P2ID notes (toggle on/off per swap)
+- **Slippage protection** with user-configurable tolerance
+- **Real-time price charts** (TradingView lightweight-charts)
 
-### Prerequisites
+### Liquidity
+- **Add / remove liquidity** to AMM pools
+- **LP share tracking** per user per pool
+- **Pool statistics** (TVL, 24h volume, 24h fees, APY)
 
-- [Rust](https://rustup.rs/) (1.75+)
-- [Node.js](https://nodejs.org/) (20+)
-- [Miden Wallet](https://chromewebstore.google.com/detail/miden-wallet/ablmompanofnodfdkgchkpmphailefpb) browser extension
+### Advanced
+- **TWAP price oracle** — time-weighted average price recorded after every swap, queryable with custom windows
+- **Dynamic fees** — swap fee adjusts based on recent price volatility (5 bps low / 10 bps normal / 30 bps high)
+- **Auto-polling daemons** — swap and liquidity daemons continuously poll for new notes every 15s
+- **Worker heartbeat** — daemons log a heartbeat every 60s for monitoring
 
-### Development Setup
+## Tech Stack
 
-```bash
-# 1. Build daemons
-cargo build --release --bin swap-daemon --bin liquidity-daemon
-cargo build --release -p milo-faucet-server
-
-# 2. Start daemons (each in a separate terminal)
-cd pool-daemon && ../target/release/swap-daemon
-cd pool-daemon && ../target/release/liquidity-daemon
-./target/release/milo-faucet-server 8084
-
-# 3. Start frontend
-cd frontend && npm install && npm run dev
-```
-
-### Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| Swap Daemon | 8080 | Handles token swap transactions |
-| Liquidity Daemon | 8090 | Manages liquidity deposits & withdrawals |
-| Faucet Daemon | 8084 | Mints testnet tokens to users |
-| Frontend | 3000 | React SPA  |
-
-## Token & Pool Configuration
-
-### Tokens
-
-| Token | Faucet ID | Decimals |
-|-------|-----------|----------|
-| MILO | `0x5e8e88146824a4200e2b18de0ad670` | 0 |
-| MELO | `0x0ebc079b56cc3920659055ebd56a96` | 0 |
-| MUSDC | `0xee34300f31693c207ab206c064b421` | 0 |
-| MIDEN | `0x54bf4e12ef20082070758b022456c7` | 6 |
-
-### Pools
-
-| Pool | Pool Account ID |
-|------|-----------------|
-| MILO/MUSDC | `0x9f9200bc043df1104b0015778f1ff0` |
-| MELO/MUSDC | `0x257f686cd6cf6f1061921936ad9f75` |
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 19, TypeScript, Vite |
+| Wallet | `@miden-sdk/miden-wallet-adapter` (browser extension) |
+| Blockchain SDK | `@miden-sdk/miden-sdk` 0.13 (WASM) |
+| Backend daemons | Rust, Axum, Tokio |
+| Miden client | `miden-client` + `miden-protocol` 0.13 |
+| Smart contracts | Miden Assembly (MASM) |
+| Database | SQLite (daemon state), localStorage (frontend metadata) |
+| Charts | lightweight-charts 5.1 |
 
 ## Project Structure
 
 ```
 milo-swap/
-├── Cargo.toml                # Rust workspace root
-├── frontend/                 # React frontend
+├── frontend/                   # React application
 │   └── src/
-│       ├── config/api.ts     # API URL configuration (dev/prod)
-│       ├── tokenRegistry.ts  # Token metadata & faucet IDs
-│       ├── pages/            # Swap, Pools, Portfolio, Faucet pages
-│       ├── hooks/            # useSwap, useLiquidity, usePoolStats
-│       └── faucetClient.ts   # Faucet API client with PoW
-├── pool-daemon/              # Swap & Liquidity daemons
+│       ├── pages/              # Home, Trade, Pools, Portfolio, Faucet
+│       ├── hooks/              # useP2IDSwap, useLiquidity, usePoolStats, ...
+│       ├── lib/                # P2IDSwap, P2IDDeposit, AppWallet, crypto
+│       ├── config/             # tokenRegistry, poolConfig, api endpoints
+│       └── components/         # Shared UI components
+│
+├── pool-daemon/                # Rust backend daemons
 │   └── src/bin/
-│       ├── swap_daemon.rs    # Token swap engine
-│       └── liquidity_daemon.rs # Liquidity management
-├── faucet-server/            # Token faucet daemon
-│   └── src/
-│       ├── main.rs           # Faucet server with rate limiting
-│       └── faucet_ids.rs     # Faucet account ID constants
-├── contracts/                # MASM smart contracts
-├── integration/              # Setup & integration scripts
-└── public/                   # Static contract files
+│       ├── swap_daemon.rs      # Swap processing, TWAP, dynamic fees, limit orders
+│       └── liquidity_daemon.rs # Deposit processing, LP tracking, pool reserves
+│
+├── faucet-server/              # Testnet token faucet
+│   └── src/main.rs             # Mint tokens with rate limiting
+│
+├── contracts/                  # Miden Assembly smart contracts
+│   └── milo-pool/
+│       ├── milo-pool.masm      # Pool account contract (receive, swap, deposit, withdraw)
+│       ├── SWAP.masm           # Swap note script (AMM calculation on-chain)
+│       ├── DEPOSIT.masm        # Deposit note script
+│       └── WITHDRAW.masm       # Withdraw note script
+│
+├── integration/                # Setup and utility scripts (Rust)
+│   └── src/bin/                # setup_milo, add_liquidity, swap_tokens, etc.
+│
+├── pools.json                  # Active pool account IDs
+├── proxy-server.js             # CORS proxy for Miden RPC
+└── start-all.sh                # Launch all services locally
 ```
 
-## How It Works
+## Tokens
 
-1. **Connect** your Miden Wallet browser extension
-2. **Claim** testnet tokens from the Faucet tab
-3. **Swap** tokens — your browser generates a zk-proof, creates a P2ID note, and the daemon consumes it
-4. **Provide Liquidity** — deposit both tokens to a pool and track your position
-5. **Withdraw** — remove your deposited liquidity proportionally
+| Symbol | Name | Faucet ID | Decimals |
+|--------|------|-----------|----------|
+| MILO | Milo Token | `0x6c9dc9f00ccc7e2005a83d7aa307db` | 8 |
+| MELO | Melo Token | `0xbde6a12c78fab7205b85d43e59ac81` | 8 |
+| MUSDC | Milo USDC | `0x5f97ba94b0d6912053db274d357659` | 8 |
+| MIDEN | Miden Network | `0x37d5977a8e16d8205a360820f0230f` | 6 |
 
-All transactions use Miden's note-based model. Every swap and deposit creates a P2ID (Pay-to-ID) note that is proven locally and submitted to the network.
+## Pools
 
-## Deployment
+| Pair | Pool Account ID | Routing |
+|------|-----------------|---------|
+| MILO / MUSDC | `0x70e4a5ff036fe21004c953d8b7c99c` | Direct |
+| MELO / MUSDC | `0x02db2e36774d1f107f406d62dffb74` | Direct |
+| MILO / MELO | — | Multi-hop via MUSDC |
 
-The app is deployed at [milodex.xyz](https://milodex.xyz) with:
+## Getting Started
 
-- Nginx serving the static frontend + reverse proxying API routes
-- Three systemd services for the Rust daemons
-- Let's Encrypt SSL certificate (auto-renewal)
+### Prerequisites
 
-## License
+- [Rust](https://rustup.rs/) (stable)
+- [Node.js](https://nodejs.org/) 18+
+- [Miden browser extension wallet](https://docs.miden.io/)
 
-MIT
+### Local Development
+
+```bash
+# 1. Start the CORS proxy (required for Miden RPC from browser)
+node proxy-server.js            # :8085
+
+# 2. Start the faucet server
+cargo run -p faucet-server --release -- 8084
+
+# 3. Start the swap daemon
+cargo run -p pool-daemon --bin swap-daemon --release   # :8080
+
+# 4. Start the liquidity daemon
+cargo run -p pool-daemon --bin liquidity-daemon --release  # :8090
+
+# 5. Start the frontend
+cd frontend && npm install && npm run dev              # :3000
+```
+
+Or use the convenience script:
+
+```bash
+./start-all.sh
+```
+
+### Production Deployment
+
+The production setup uses Nginx as a reverse proxy:
+
+```nginx
+location /api/swap/ {
+    proxy_pass http://localhost:8080/;
+}
+location /api/liquidity/ {
+    proxy_pass http://localhost:8090/;
+}
+location /api/faucet/ {
+    proxy_pass http://localhost:8084/;
+}
+```
+
+The frontend auto-detects the environment and routes API calls accordingly (`localhost` for dev, `/api/*` for production).
+
+## API Reference
+
+### Swap Daemon (`:8080`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/track_note` | Register a swap note for processing |
+| `POST` | `/consume` | Manually trigger note consumption |
+| `GET` | `/tracked_notes` | List tracked swap notes |
+| `GET` | `/twap?pool_id=<hex>&window=3600` | TWAP price over time window |
+| `GET` | `/price_history?pool_id=<hex>&limit=100` | Recent price points |
+| `GET` | `/current_fee?pool_id=<hex>` | Current dynamic fee for pool |
+| `POST` | `/limit_order` | Place a limit order |
+| `GET` | `/limit_orders?user_id=<hex>` | List user's limit orders |
+| `POST` | `/cancel_limit_order` | Cancel a pending limit order |
+
+### Liquidity Daemon (`:8090`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/track_note` | Register a deposit note |
+| `POST` | `/consume` | Manually trigger note consumption |
+| `GET` | `/pool_reserves` | Current reserves for all pools |
+| `GET` | `/user_deposits?user_id=<hex>` | User's deposit history |
+| `POST` | `/record_trade` | Record trade for volume tracking |
+| `GET` | `/trade_volume` | 24h trade volumes |
+| `GET` | `/apy` | Pool APY calculations |
+
+### Faucet Server (`:8084`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/faucets` | List available faucets |
+| `POST` | `/get_tokens` | Claim testnet tokens (rate limited) |
+
+## How Swaps Work
+
+1. **User initiates swap** in the frontend — selects tokens, amount, and slippage tolerance.
+2. **Frontend creates a P2ID note** sending the sell token to the pool account, then submits it via the Miden wallet extension.
+3. **Frontend calls `/track_note`** on the swap daemon with swap metadata (buy token, min output, user address).
+4. **Swap daemon auto-polls** every 15s, finds the consumable note, and matches it with tracked swap info.
+5. **Daemon executes an atomic transaction**: consumes the user's input note and creates a P2ID output note back to the user with the calculated swap amount (after dynamic fee).
+6. **User's wallet picks up** the output note and the swapped tokens appear in their balance.
+
+## Smart Contracts
+
+The pool contract (`milo-pool.masm`) manages on-chain pool state:
+
+| Storage Slot | Purpose |
+|-------------|---------|
+| `0x0002` | Asset mapping (token A and B faucet IDs) |
+| `0x0003` | Pool state (liabilities, reserve, reserve with slippage) |
+| `0x0004` | User deposits / LP shares |
+| `0x0005` | Curve parameters |
+| `0x0006` | Fee configuration (swap, backstop, protocol) |
+
+Exported functions: `receive_asset`, `move_asset_to_note`, `bounce_asset`, `deposit`, `set_pool_state`, `get_pool_state`.
+
+## ID Reference
+
+All canonical token and pool IDs are maintained in:
+- **Frontend:** [`frontend/src/config/tokenRegistry.ts`](frontend/src/config/tokenRegistry.ts)
+- **Pools:** [`pools.json`](pools.json)
+- **Faucet:** [`faucet-server/src/main.rs`](faucet-server/src/main.rs)
+
+## Links
+
+- [Miden Documentation](https://docs.miden.io/)
+- [Miden SDK](https://github.com/0xPolygonMiden/miden-sdk)
+- [Miden Testnet Explorer](https://testnet.miden.io/)

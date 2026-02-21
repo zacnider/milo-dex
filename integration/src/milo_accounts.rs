@@ -10,23 +10,23 @@
 
 // ============ USER WALLET ============
 /// User wallet for all operations (hex format)
-pub const USER_WALLET_ID_HEX: &str = "0x596d2265efc9b21029638d388d590b";
+pub const USER_WALLET_ID_HEX: &str = "0x9468e1645902cc101d38fa5b785276";
 /// User wallet address (for P2ID notes - base58 format)
-pub const USER_WALLET_ADDRESS: &str = "mtst1az438wgle3ljjyrfwryg402ddcp7psqs";
+pub const USER_WALLET_ADDRESS: &str = "mtst1az2x3ctytypvcyqa8ra9k7zjwclrpfs0";
 
 // ============ TOKEN FAUCETS ============
 /// MILO Token Faucet ID (Orange color token)
-pub const MILO_FAUCET_ID_HEX: &str = "0x5e8e88146824a4200e2b18de0ad670";
+pub const MILO_FAUCET_ID_HEX: &str = "0xa28b4f998be3a32047b88ae20e0a35";
 /// MELO Token Faucet ID (Green color token)
-pub const MELO_FAUCET_ID_HEX: &str = "0x0ebc079b56cc3920659055ebd56a96";
+pub const MELO_FAUCET_ID_HEX: &str = "0x13bde3e49deaf92074138cbcaf8d4f";
 /// MUSDC Token Faucet ID (Blue - USDC stablecoin)
-pub const MUSDC_FAUCET_ID_HEX: &str = "0xee34300f31693c207ab206c064b421";
+pub const MUSDC_FAUCET_ID_HEX: &str = "0x2c09e8d9f4ef022044cfee2d14d3a8";
 
 // ============ LIQUIDITY POOLS ============
 /// MILO/MUSDC Pool Account ID
-pub const MILO_MUSDC_POOL_ACCOUNT_ID_HEX: &str = "0x23b414fcc35900103c828935971168";
+pub const MILO_MUSDC_POOL_ACCOUNT_ID_HEX: &str = "0x6b10bd738877ea101db7175839e152";
 /// MELO/MUSDC Pool Account ID
-pub const MELO_MUSDC_POOL_ACCOUNT_ID_HEX: &str = "0x2d3344829cfa171073659d41e8aee1";
+pub const MELO_MUSDC_POOL_ACCOUNT_ID_HEX: &str = "0x563a995fec149d105728eaa1bd4332";
 
 // ============ POOL KEY IDs (For signing transactions) ============
 /// Key ID 0: MILO/MUSDC Pool signing key

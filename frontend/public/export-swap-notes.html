@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Export Swap Notes to Backend</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Export Swap Notes to Backend</h1>
+    <p>This tool exports swap notes from localStorage to a JSON file that the backend daemon can read.</p>
+    
+    <button onclick="exportSwapNotes()">Export Swap Notes</button>
+    <button onclick="clearSwapNotes()">Clear All Swap Notes</button>
+    
+    <div id="status"></div>
+    <div id="output"></div>
+
+    <script>
+        function exportSwapNotes() {
+            const statusDiv = document.getElementById('status');
+            const outputDiv = document.getElementById('output');
+            
+            try {
+                const swapNotesStr = localStorage.getItem('miden_swap_notes');
+                if (!swapNotesStr) {
+                    statusDiv.innerHTML = '<div class="status error">No swap notes found in localStorage</div>';
+                    return;
+                }
+                
+                const swapNotes = JSON.parse(swapNotesStr);
+                const jsonStr = JSON.stringify(swapNotes, null, 2);
+                
+                // Create download link
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'swap_notes_db.json';
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                statusDiv.innerHTML = `<div class="status success">✅ Exported ${swapNotes.length} swap note(s). Save the file as 'swap_notes_db.json' in the integration folder.</div>`;
+                outputDiv.innerHTML = `<h3>Exported Data:</h3><pre>${jsonStr}</pre>`;
+            } catch (e) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${e.message}</div>`;
+            }
+        }
+        
+        function clearSwapNotes() {
+            if (confirm('Are you sure you want to clear all swap notes from localStorage?')) {
+                localStorage.removeItem('miden_swap_notes');
+                document.getElementById('status').innerHTML = '<div class="status success">✅ Cleared all swap notes</div>';
+                document.getElementById('output').innerHTML = '';
+            }
+        }
+        
+        // Show current swap notes on load
+        window.onload = function() {
+            const swapNotesStr = localStorage.getItem('miden_swap_notes');
+            if (swapNotesStr) {
+                const swapNotes = JSON.parse(swapNotesStr);
+                document.getElementById('output').innerHTML = `<h3>Current Swap Notes (${swapNotes.length}):</h3><pre>${JSON.stringify(swapNotes, null, 2)}</pre>`;
+            }
+        };
+    </script>
+</body>
+</html>

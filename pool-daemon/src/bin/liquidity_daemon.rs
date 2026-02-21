@@ -29,7 +29,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::time::sleep;
 use tower_http::cors::{Any, CorsLayer};
@@ -37,7 +37,7 @@ use tower_http::cors::{Any, CorsLayer};
 type MidenClient = miden_client::Client<FilesystemKeyStore<StdRng>>;
 
 const KEYSTORE_PATH: &str = "integration/keystore";
-const STORE_PATH: &str = "integration/store.sqlite3";
+const STORE_PATH: &str = "integration/liquidity_store.sqlite3";
 
 // Tracked notes
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,10 +90,34 @@ struct UserDepositsQuery {
     user_id: String,
 }
 
-// Worker message enum - either consume or withdraw
+// Pool reserves response
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PoolReservesResponse {
+    pools: Vec<PoolReserveEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PoolReserveEntry {
+    pool_id: String,
+    pair: String,
+    reserves: Vec<ReserveAsset>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ReserveAsset {
+    faucet_id: String,
+    amount: String,
+}
+
+struct PoolReservesRequest {
+    reply: tokio::sync::oneshot::Sender<Result<PoolReservesResponse, String>>,
+}
+
+// Worker message enum - consume, withdraw, or pool_reserves
 enum WorkerRequest {
     Consume(ConsumeRequest),
     Withdraw(WithdrawWorkerRequest),
+    PoolReserves(PoolReservesRequest),
 }
 
 // Shared state
@@ -196,9 +220,13 @@ async fn main() -> Result<()> {
         Arc::new(Mutex::new(load_user_deposits()));
     println!("📦 Loaded {} user deposit record(s)", user_deposits.lock().unwrap().len());
 
+    // Shared deposit_info_map - create before worker thread for auto-poll access
+    let deposit_info_map: Arc<Mutex<HashMap<String, DepositInfo>>> = Arc::new(Mutex::new(HashMap::new()));
+
     // Initialize client in worker thread
     let (worker_tx, worker_rx) = std::sync::mpsc::channel::<WorkerRequest>();
     let user_deposits_worker = user_deposits.clone();
+    let deposit_info_map_worker = deposit_info_map.clone();
 
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -214,22 +242,48 @@ async fn main() -> Result<()> {
 
             println!("✅ Client initialized in worker thread\n");
 
-            // Process worker requests (consume + withdraw)
+            let mut last_poll = Instant::now();
+
+            // Non-blocking event loop: HTTP requests + auto-poll
             loop {
-                match worker_rx.recv() {
+                // Check for HTTP-triggered requests (non-blocking)
+                match worker_rx.try_recv() {
                     Ok(WorkerRequest::Consume(req)) => {
-                        let result = consume_pool_notes(&mut client, req.pool_id_opt, req.deposit_info_map, &user_deposits_worker).await;
+                        let result = consume_pool_notes(&mut client, req.pool_id_opt, req.deposit_info_map, &user_deposits_worker, false,).await;
                         let _ = req.reply.send(result.map_err(|e| format!("{:?}", e)));
+                        last_poll = Instant::now();
                     }
                     Ok(WorkerRequest::Withdraw(req)) => {
                         let result = execute_withdraw(&mut client, req.pool_id, req.user_id, req.lp_amount, req.min_token_a_out, req.min_token_b_out, &user_deposits_worker).await;
                         let _ = req.reply.send(result.map_err(|e| format!("{:?}", e)));
+                        last_poll = Instant::now();
                     }
-                    Err(_) => {
+                    Ok(WorkerRequest::PoolReserves(req)) => {
+                        let result = get_pool_reserves(&mut client).await;
+                        let _ = req.reply.send(result.map_err(|e| format!("{:?}", e)));
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // No HTTP request pending
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         println!("Worker thread shutting down");
                         break;
                     }
                 }
+
+                // Auto-poll every 15 seconds
+                if last_poll.elapsed() >= Duration::from_secs(15) {
+                    let deposit_info = deposit_info_map_worker.lock().unwrap().clone();
+                    let result = consume_pool_notes(&mut client, None, deposit_info, &user_deposits_worker, true).await;
+                    if let Ok(ref resp) = result {
+                        if resp.consumed > 0 {
+                            println!("🔄 Auto-poll: consumed {} deposit note(s)", resp.consumed);
+                        }
+                    }
+                    last_poll = Instant::now();
+                }
+
+                sleep(Duration::from_millis(100)).await;
             }
         });
     });
@@ -260,7 +314,7 @@ async fn main() -> Result<()> {
     // Build app state
     let state = AppState {
         tracked_notes: Arc::new(Mutex::new(Vec::new())),
-        deposit_info_map: Arc::new(Mutex::new(HashMap::new())),
+        deposit_info_map,
         user_deposits,
         worker_tx: Arc::new(worker_tx),
         trade_volumes: Arc::new(Mutex::new(initial_volumes)),
@@ -284,6 +338,7 @@ async fn main() -> Result<()> {
         .route("/record_trade", post(record_trade_handler))
         .route("/trade_volume", get(get_trade_volume_handler))
         .route("/apy", get(get_apy_handler))
+        .route("/pool_reserves", get(pool_reserves_handler))
         .layer(cors)
         .with_state(state);
 
@@ -304,6 +359,8 @@ async fn main() -> Result<()> {
     println!("   - POST /record_trade");
     println!("   - GET  /trade_volume");
     println!("   - GET  /apy");
+    println!("   - GET  /pool_reserves");
+    println!("   Auto-polling: every 15 seconds");
     println!();
 
     axum::serve(listener, app)
@@ -455,6 +512,7 @@ async fn consume_pool_notes(
     pool_id_opt: Option<String>,
     deposit_info_map: HashMap<String, DepositInfo>,
     user_deposits: &Arc<Mutex<HashMap<String, UserPoolDeposit>>>,
+    auto_poll: bool,
 ) -> Result<ConsumeResponse> {
     // Load pool IDs
     let pools_json = fs::read_to_string("pools.json")?;
@@ -472,28 +530,41 @@ async fn consume_pool_notes(
     let mut total_consumed = 0;
 
     for pool_id in &pool_ids {
-        println!("🔍 Checking pool: {}...", pool_id.to_hex().chars().take(16).collect::<String>());
+        if !auto_poll {
+            println!("🔍 Checking pool: {}...", pool_id.to_hex().chars().take(16).collect::<String>());
+        }
 
         // Sync state
-        println!("   🔄 Syncing state...");
+        if !auto_poll {
+            println!("   🔄 Syncing state...");
+        }
         match tokio::time::timeout(Duration::from_secs(45), client.sync_state()).await {
-            Ok(Ok(_)) => println!("   ✅ Sync completed"),
+            Ok(Ok(_)) => {
+                if !auto_poll { println!("   ✅ Sync completed"); }
+            }
             Ok(Err(e)) => {
-                println!("   ⚠️  Sync failed: {:?}", e);
-                println!("   ⏩ Continuing anyway to check local store");
+                if !auto_poll {
+                    println!("   ⚠️  Sync failed: {:?}", e);
+                    println!("   ⏩ Continuing anyway to check local store");
+                }
             }
             Err(_) => {
-                println!("   ⚠️  Sync timeout");
-                println!("   ⏩ Continuing with stale data");
+                if !auto_poll {
+                    println!("   ⚠️  Sync timeout");
+                    println!("   ⏩ Continuing with stale data");
+                }
             }
         }
 
         // Get consumable P2ID notes for pool
         let notes = client.get_consumable_notes(Some(*pool_id)).await?;
-        println!("   📝 Found {} consumable P2ID note(s)", notes.len());
+
+        if !auto_poll || !notes.is_empty() {
+            println!("   📝 Found {} consumable P2ID note(s)", notes.len());
+        }
 
         if notes.is_empty() {
-            println!("   ℹ️  No consumable notes found");
+            if !auto_poll { println!("   ℹ️  No consumable notes found"); }
             continue;
         }
 
@@ -1036,4 +1107,89 @@ async fn get_apy_handler(
     Json(serde_json::json!({
         "pools": apy_data
     }))
+}
+
+// Pool reserves handler - returns reserves for all pools
+async fn pool_reserves_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    println!("📊 Pool reserves request received");
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    let req = PoolReservesRequest {
+        reply: reply_tx,
+    };
+
+    if state.worker_tx.send(WorkerRequest::PoolReserves(req)).is_err() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Worker thread not available"
+            }))
+        );
+    }
+
+    match tokio::time::timeout(Duration::from_secs(60), reply_rx).await {
+        Ok(Ok(Ok(response))) => {
+            (StatusCode::OK, Json(serde_json::json!(response)))
+        }
+        Ok(Ok(Err(e))) => {
+            eprintln!("❌ Pool reserves error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": e
+            })))
+        }
+        _ => {
+            (StatusCode::REQUEST_TIMEOUT, Json(serde_json::json!({
+                "error": "Timeout"
+            })))
+        }
+    }
+}
+
+// Get pool reserves from on-chain state
+async fn get_pool_reserves(client: &mut MidenClient) -> Result<PoolReservesResponse> {
+    let pools_json = fs::read_to_string("pools.json")?;
+    let pools: serde_json::Value = serde_json::from_str(&pools_json)?;
+
+    let pool_configs = vec![
+        ("MILO/MUSDC", pools["milo_musdc_pool_id"].as_str().unwrap()),
+        ("MELO/MUSDC", pools["melo_musdc_pool_id"].as_str().unwrap()),
+    ];
+
+    client.sync_state().await?;
+
+    let mut entries = Vec::new();
+
+    for (pair_name, pool_id_hex) in pool_configs {
+        let pool_id = AccountId::from_hex(pool_id_hex)?;
+
+        match client.get_account(pool_id).await? {
+            Some(pool_account) => {
+                let pool_vault = pool_account.account().vault();
+                let mut reserves = Vec::new();
+
+                for asset in pool_vault.assets() {
+                    if let miden_client::asset::Asset::Fungible(fungible_asset) = asset {
+                        let amount: u64 = fungible_asset.amount().try_into()?;
+                        reserves.push(ReserveAsset {
+                            faucet_id: fungible_asset.faucet_id().to_hex(),
+                            amount: amount.to_string(),
+                        });
+                    }
+                }
+
+                entries.push(PoolReserveEntry {
+                    pool_id: pool_id_hex.to_string(),
+                    pair: pair_name.to_string(),
+                    reserves,
+                });
+            }
+            None => {
+                println!("   ⚠️  Pool {} not found in local store", pool_id_hex);
+            }
+        }
+    }
+
+    Ok(PoolReservesResponse { pools: entries })
 }

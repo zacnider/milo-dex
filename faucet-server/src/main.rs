@@ -47,8 +47,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 const KEYSTORE_PATH: &str = "keystore";
 const STORE_PATH: &str = "faucet_store.sqlite3";
-const MAX_DAILY_AMOUNT: u64 = 10;
-const ADMIN_ACCOUNT_ID: &str = "0xab13b91fcc7f29106970c88abd4d6e";
+const MAX_DAILY_AMOUNT: u64 = 10_00000000; // 10 tokens × 10^8 decimals
+const ADMIN_ACCOUNT_ID: &str = "0x9e96e636738fc9104ed2b971931cc7";
 
 /// Tracks daily faucet usage per user+token
 #[derive(Clone)]
@@ -65,11 +65,11 @@ fn current_day() -> u32 {
         / 86400) as u32
 }
 
-/// Faucet configurations — symbol, faucet account ID, max_supply
+/// Faucet configurations — symbol, faucet account ID, decimals
 const FAUCETS: &[(&str, &str, u64)] = &[
-    ("MILO", MILO_FAUCET_ID, 1_000_000_000),
-    ("MELO", MELO_FAUCET_ID, 1_000_000_000),
-    ("MUSDC", MUSDC_FAUCET_ID, 1_000_000),
+    ("MILO", MILO_FAUCET_ID, 8),
+    ("MELO", MELO_FAUCET_ID, 8),
+    ("MUSDC", MUSDC_FAUCET_ID, 8),
 ];
 
 // ---------------------------------------------------------------------------

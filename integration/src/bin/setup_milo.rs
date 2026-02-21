@@ -53,19 +53,19 @@ async fn main() -> Result<()> {
     println!("   ✅ User Wallet ID: {}", user_wallet.id().to_hex());
     println!("   📍 Address: {}\n", user_wallet.id().to_bech32(NetworkId::Testnet));
 
-    // Step 2: Create MILO faucet
+    // Step 2: Create MILO faucet (max 10 billion tokens, 8 decimals → 10^18 raw)
     println!("📝 Adım 2: MILO Faucet oluşturuluyor...");
-    let milo_faucet = create_token_faucet(&mut client, &keystore, "MILO", 1_000_000_000).await?;
+    let milo_faucet = create_token_faucet(&mut client, &keystore, "MILO", 1_000_000_000_000_000_000).await?;
     println!("   ✅ MILO Faucet ID: {}\n", milo_faucet.id().to_hex());
 
-    // Step 3: Create MELO faucet
+    // Step 3: Create MELO faucet (max 10 billion tokens)
     println!("📝 Adım 3: MELO Faucet oluşturuluyor...");
-    let melo_faucet = create_token_faucet(&mut client, &keystore, "MELO", 1_000_000_000).await?;
+    let melo_faucet = create_token_faucet(&mut client, &keystore, "MELO", 1_000_000_000_000_000_000).await?;
     println!("   ✅ MELO Faucet ID: {}\n", melo_faucet.id().to_hex());
 
-    // Step 4: Create MUSDC faucet
+    // Step 4: Create MUSDC faucet (max 10 billion tokens)
     println!("📝 Adım 4: MUSDC Faucet oluşturuluyor...");
-    let musdc_faucet = create_token_faucet(&mut client, &keystore, "MUSDC", 10_000_000_000).await?;
+    let musdc_faucet = create_token_faucet(&mut client, &keystore, "MUSDC", 1_000_000_000_000_000_000).await?;
     println!("   ✅ MUSDC Faucet ID: {}\n", musdc_faucet.id().to_hex());
 
     // Step 5: Mint tokens to user wallet
@@ -200,9 +200,9 @@ async fn mint_tokens(
 ) -> Result<()> {
     client.sync_state().await?;
 
-    // Mint MILO
+    // Mint MILO (500,000 tokens × 10^8 decimals = 50 trillion raw units)
     println!("   💰 500,000 MILO mint ediliyor...");
-    let milo_amount = 500_000u64;
+    let milo_amount = 500_000u64 * 100_000_000; // 500K tokens in base units
     let milo_asset = FungibleAsset::new(milo_faucet.id(), milo_amount)
         .context("MILO asset oluşturulamadı")?;
 
@@ -218,9 +218,9 @@ async fn mint_tokens(
     wait_for_transaction(client, tx_id).await?;
     println!("   ✅ 500,000 MILO mint edildi");
 
-    // Mint MELO
+    // Mint MELO (500,000 tokens × 10^8 decimals)
     println!("   💰 500,000 MELO mint ediliyor...");
-    let melo_amount = 500_000u64;
+    let melo_amount = 500_000u64 * 100_000_000; // 500K tokens in base units
     let melo_asset = FungibleAsset::new(melo_faucet.id(), melo_amount)
         .context("MELO asset oluşturulamadı")?;
 
@@ -236,9 +236,9 @@ async fn mint_tokens(
     wait_for_transaction(client, tx_id).await?;
     println!("   ✅ 500,000 MELO mint edildi");
 
-    // Mint MUSDC
+    // Mint MUSDC (1,000,000 tokens × 10^8 decimals)
     println!("   💰 1,000,000 MUSDC mint ediliyor...");
-    let musdc_amount = 1_000_000u64;
+    let musdc_amount = 1_000_000u64 * 100_000_000; // 1M tokens in base units
     let musdc_asset = FungibleAsset::new(musdc_faucet.id(), musdc_amount)
         .context("MUSDC asset oluşturulamadı")?;
 
@@ -371,6 +371,7 @@ fn update_frontend_registry(user_wallet_id: String, user_wallet_address: String,
     let registry_content = format!(
         r#"// Auto-generated token registry - Updated with real faucet IDs
 // Generated from setup_milo execution
+import {{ FAUCET_URL }} from './config/api';
 
 export interface TokenInfo {{
   symbol: string;
@@ -380,11 +381,12 @@ export interface TokenInfo {{
   logo: string;
   color: string;
   faucetApiUrl?: string;
+  legacyFaucetIds?: string[];
 }}
 
 export const CONFIG: {{ apiUrl: string; faucetServerUrl: string; userWalletId: string; userWalletAddress: string; tokens: Record<string, TokenInfo> }} = {{
-  apiUrl: 'http://localhost:8084',
-  faucetServerUrl: 'http://localhost:8084',
+  apiUrl: FAUCET_URL,
+  faucetServerUrl: FAUCET_URL,
   userWalletId: '{}',
   userWalletAddress: '{}',
   tokens: {{
@@ -392,28 +394,36 @@ export const CONFIG: {{ apiUrl: string; faucetServerUrl: string; userWalletId: s
       symbol: 'MILO',
       name: 'Milo Token',
       faucetId: '{}',
-      decimals: 9,
+      decimals: 8,
       logo: '/tokens/milo.svg',
       color: '#6366f1',
-      faucetApiUrl: 'http://localhost:8084',
+      faucetApiUrl: FAUCET_URL,
     }},
     MELO: {{
       symbol: 'MELO',
       name: 'Melo Token',
       faucetId: '{}',
-      decimals: 9,
+      decimals: 8,
       logo: '/tokens/melo.svg',
       color: '#10b981',
-      faucetApiUrl: 'http://localhost:8084',
+      faucetApiUrl: FAUCET_URL,
     }},
     MUSDC: {{
       symbol: 'MUSDC',
       name: 'Milo USDC',
       faucetId: '{}',
-      decimals: 6,
+      decimals: 8,
       logo: '/tokens/usdc.svg',
       color: '#2563eb',
-      faucetApiUrl: 'http://localhost:8084',
+      faucetApiUrl: FAUCET_URL,
+    }},
+    MIDEN: {{
+      symbol: 'MIDEN',
+      name: 'Miden Network',
+      faucetId: '0x54bf4e12ef20082070758b022456c7',
+      decimals: 6,
+      logo: '/tokens/miden.svg',
+      color: '#ff6b35',
     }},
   }},
 }};

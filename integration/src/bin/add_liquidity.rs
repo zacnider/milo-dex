@@ -7,8 +7,9 @@ use anyhow::{Context, Result};
 use miden_client::store::TransactionFilter;
 use miden_client::{
     Felt,
-    account::{Account, AccountId, AccountStorageMode, NetworkId},
+    account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType, NetworkId},
     asset::FungibleAsset,
+    auth::AuthSecretKey,
     builder::ClientBuilder,
     keystore::FilesystemKeyStore,
     note::{create_p2id_note, NoteType},
@@ -16,7 +17,7 @@ use miden_client::{
     transaction::{OutputNote, TransactionRequestBuilder},
 };
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
-use miden_objects::account::AccountId as ObjectsAccountId;
+use miden_lib::account::{auth::AuthRpoFalcon512, wallets::BasicWallet};
 use rand::rngs::StdRng;
 use rand::RngCore;
 use std::fs;
@@ -54,7 +55,7 @@ async fn main() -> Result<()> {
     println!();
 
     // Initialize client
-    let (mut client, _keystore) = init_client().await?;
+    let (mut client, keystore) = init_client().await?;
 
     // Parse account IDs
     let user_wallet_id = AccountId::from_hex(user_wallet_id_hex)?;
@@ -65,12 +66,13 @@ async fn main() -> Result<()> {
     // Sync state
     client.sync_state().await?;
 
-    // Check if pools exist and load them
+    // Check if pools exist, or create them
     let (milo_pool_id, melo_pool_id) = if PathBuf::from("pools.json").exists() {
         println!("📄 Mevcut pools.json bulundu, pool'lar yükleniyor...");
         load_existing_pools(&mut client).await?
     } else {
-        return Err(anyhow::anyhow!("pools.json bulunamadı! Önce pool'ları oluşturun."));
+        println!("📝 Pool hesapları oluşturuluyor...");
+        create_pools(&mut client, &keystore).await?
     };
 
     println!("   - MILO/MUSDC Pool: {}", milo_pool_id.to_hex());
@@ -78,10 +80,11 @@ async fn main() -> Result<()> {
     println!();
 
     // Mint tokens regardless (always mint more for liquidity)
+    // Amounts in base units: tokens × 10^8 (8 decimals)
     println!("💰 Token'lar mint ediliyor...");
-    mint_token(&mut client, milo_faucet_id, user_wallet_id, 200_000).await?;
-    mint_token(&mut client, melo_faucet_id, user_wallet_id, 200_000).await?;
-    mint_token(&mut client, musdc_faucet_id, user_wallet_id, 500_000).await?;
+    mint_token(&mut client, milo_faucet_id, user_wallet_id, 200_000 * 100_000_000).await?;
+    mint_token(&mut client, melo_faucet_id, user_wallet_id, 200_000 * 100_000_000).await?;
+    mint_token(&mut client, musdc_faucet_id, user_wallet_id, 500_000 * 100_000_000).await?;
     
     // Consume mint notes
     println!("   📝 Mint notları tüketiliyor...");
@@ -98,13 +101,13 @@ async fn main() -> Result<()> {
         println!("   ✅ Not tüketildi: {}", note.id().to_hex().chars().take(16).collect::<String>());
     }
 
-    // Step 3: Add liquidity to MILO/MUSDC pool
+    // Step 3: Add liquidity to MILO/MUSDC pool (amounts in base units)
     println!("\n📝 Adım 1: MILO/MUSDC Pool'a likidite ekleniyor...");
-    add_liquidity_to_pool(&mut client, user_wallet_id, milo_faucet_id, musdc_faucet_id, milo_pool_id, 100_000, 200_000).await?;
+    add_liquidity_to_pool(&mut client, user_wallet_id, milo_faucet_id, musdc_faucet_id, milo_pool_id, 100_000 * 100_000_000, 200_000 * 100_000_000).await?;
 
-    // Step 4: Add liquidity to MELO/MUSDC pool
+    // Step 4: Add liquidity to MELO/MUSDC pool (amounts in base units)
     println!("\n📝 Adım 2: MELO/MUSDC Pool'a likidite ekleniyor...");
-    add_liquidity_to_pool(&mut client, user_wallet_id, melo_faucet_id, musdc_faucet_id, melo_pool_id, 100_000, 200_000).await?;
+    add_liquidity_to_pool(&mut client, user_wallet_id, melo_faucet_id, musdc_faucet_id, melo_pool_id, 100_000 * 100_000_000, 200_000 * 100_000_000).await?;
 
     println!("\n🎉 Likidite ekleme tamamlandı!");
 
@@ -115,18 +118,152 @@ async fn main() -> Result<()> {
 async fn load_existing_pools(client: &mut MidenClient) -> Result<(AccountId, AccountId)> {
     let config_str = fs::read_to_string("pools.json")?;
     let config: serde_json::Value = serde_json::from_str(&config_str)?;
-    
+
     let milo_pool_id = AccountId::from_hex(config["milo_musdc_pool_id"].as_str().unwrap())?;
     let melo_pool_id = AccountId::from_hex(config["melo_musdc_pool_id"].as_str().unwrap())?;
-    
+
     // Import accounts to local client
     println!("   📥 Pool'lar yerel client'e aktarılıyor...");
-    
+
     // Try to import - if they exist locally already, this will just return
     let _ = client.import_account_by_id(milo_pool_id).await;
     let _ = client.import_account_by_id(melo_pool_id).await;
-    
+
     Ok((milo_pool_id, melo_pool_id))
+}
+
+/// Create new pool accounts and save to pools.json + poolConfig.ts
+async fn create_pools(
+    client: &mut MidenClient,
+    keystore: &FilesystemKeyStore<StdRng>,
+) -> Result<(AccountId, AccountId)> {
+    // Create MILO/MUSDC pool account
+    println!("   📝 MILO/MUSDC pool hesabı oluşturuluyor...");
+    let milo_pool = create_pool_account(client, keystore).await?;
+    let milo_pool_id = milo_pool.id();
+    println!("   ✅ MILO/MUSDC Pool ID: {}", milo_pool_id.to_hex());
+
+    // Create MELO/MUSDC pool account
+    println!("   📝 MELO/MUSDC pool hesabı oluşturuluyor...");
+    let melo_pool = create_pool_account(client, keystore).await?;
+    let melo_pool_id = melo_pool.id();
+    println!("   ✅ MELO/MUSDC Pool ID: {}", melo_pool_id.to_hex());
+
+    // Save pools.json (root dir for daemon)
+    let pools_config = serde_json::json!({
+        "milo_musdc_pool_id": milo_pool_id.to_hex(),
+        "milo_musdc_pool_address": milo_pool_id.to_bech32(NetworkId::Testnet),
+        "melo_musdc_pool_id": melo_pool_id.to_hex(),
+        "melo_musdc_pool_address": melo_pool_id.to_bech32(NetworkId::Testnet),
+    });
+
+    fs::write("pools.json", serde_json::to_string_pretty(&pools_config)?)
+        .context("pools.json kaydedilemedi")?;
+    println!("   💾 pools.json kaydedildi");
+
+    // Also save to pool-daemon/pools.json
+    fs::write("pool-daemon/pools.json", serde_json::to_string_pretty(&pools_config)?)
+        .context("pool-daemon/pools.json kaydedilemedi")?;
+    println!("   💾 pool-daemon/pools.json kaydedildi");
+
+    // Update frontend poolConfig.ts
+    update_pool_config(&milo_pool_id, &melo_pool_id)?;
+
+    client.sync_state().await?;
+    Ok((milo_pool_id, melo_pool_id))
+}
+
+/// Create a pool account (regular account with BasicWallet)
+async fn create_pool_account(
+    client: &mut MidenClient,
+    keystore: &FilesystemKeyStore<StdRng>,
+) -> Result<Account> {
+    let mut init_seed = [0u8; 32];
+    client.rng().fill_bytes(&mut init_seed);
+
+    let key_pair = AuthSecretKey::new_rpo_falcon512();
+
+    let builder = AccountBuilder::new(init_seed)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key().to_commitment()))
+        .with_component(BasicWallet);
+
+    let account = builder.build().unwrap();
+    client.add_account(&account, true).await?;
+    keystore.add_key(&key_pair).unwrap();
+    client.sync_state().await?;
+
+    Ok(account)
+}
+
+/// Update frontend/src/config/poolConfig.ts with new pool IDs
+fn update_pool_config(milo_pool_id: &AccountId, melo_pool_id: &AccountId) -> Result<()> {
+    let pool_config_content = format!(
+        r#"// Pool Account IDs for Milo Swap Protocol v0.12
+// Auto-generated by add_liquidity script
+// Pool accounts created with BasicWallet component
+
+export const MILO_MUSDC_POOL_ACCOUNT_ID_HEX = '{}';
+export const MELO_MUSDC_POOL_ACCOUNT_ID_HEX = '{}';
+
+// Get pool account ID hex for a specific token pair
+export function getPoolAccountIdHex(tokenA: string, tokenB: string): string {{
+  const pair = `${{tokenA}}/${{tokenB}}`;
+  if (pair === 'MILO/MUSDC' || pair === 'MUSDC/MILO') {{
+    return MILO_MUSDC_POOL_ACCOUNT_ID_HEX;
+  }} else if (pair === 'MELO/MUSDC' || pair === 'MUSDC/MELO') {{
+    return MELO_MUSDC_POOL_ACCOUNT_ID_HEX;
+  }}
+  return MILO_MUSDC_POOL_ACCOUNT_ID_HEX;
+}}
+
+// Get default pool account ID hex
+export function getDefaultPoolAccountIdHex(): string {{
+  return MILO_MUSDC_POOL_ACCOUNT_ID_HEX;
+}}
+
+// Backward compatibility functions
+export function getMiloMusdcPoolAccountId(): string {{
+  return MILO_MUSDC_POOL_ACCOUNT_ID_HEX;
+}}
+
+export function getMeloMusdcPoolAccountId(): string {{
+  return MELO_MUSDC_POOL_ACCOUNT_ID_HEX;
+}}
+
+export function getPoolAccountIdForPair(tokenA: string, tokenB: string): string {{
+  return getPoolAccountIdHex(tokenA, tokenB);
+}}
+
+// Legacy constant for backward compatibility
+export const POOL_ACCOUNT_ID = MILO_MUSDC_POOL_ACCOUNT_ID_HEX;
+
+// Pool configurations
+export const POOLS = [
+  {{
+    pair: 'MILO/MUSDC',
+    tokenA: 'MILO',
+    tokenB: 'MUSDC',
+    poolAccountIdHex: MILO_MUSDC_POOL_ACCOUNT_ID_HEX,
+  }},
+  {{
+    pair: 'MELO/MUSDC',
+    tokenA: 'MELO',
+    tokenB: 'MUSDC',
+    poolAccountIdHex: MELO_MUSDC_POOL_ACCOUNT_ID_HEX,
+  }},
+];
+"#,
+        milo_pool_id.to_hex(),
+        melo_pool_id.to_hex(),
+    );
+
+    fs::write("frontend/src/config/poolConfig.ts", pool_config_content)
+        .context("frontend/src/config/poolConfig.ts kaydedilemedi")?;
+    println!("   💾 frontend poolConfig.ts güncellendi");
+
+    Ok(())
 }
 
 /// Initialize Miden client
