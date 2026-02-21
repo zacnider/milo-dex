@@ -237,6 +237,7 @@ All canonical token and pool IDs are maintained in:
 
 ## Links
 
-- [Miden Documentation](https://docs.miden.io/)
-- [Miden SDK](https://github.com/0xPolygonMiden/miden-sdk)
-- [Miden Testnet Explorer](https://testnet.miden.io/)
+- [Miden Documentation](https://docs.miden.xyz/)
+- [Miden Repo](https://github.com/orgs/0xMiden/repositories)
+- [Miden Testnet Explorer](https://testnet.midenscan.com/)
+- [Miden Testnet ](https://miden.xyz/build/)
